@@ -351,6 +351,25 @@
 
 <div class="toasts" id="toasts"></div>
 
+<!-- ==================== 放大預覽 ==================== -->
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lb-backdrop" data-lb-close></div>
+  <div class="lb-panel" role="dialog" aria-modal="true" aria-label="頁面預覽">
+    <header class="lb-bar">
+      <span class="lb-title" id="lb-title"></span>
+      <span class="grow"></span>
+      <button class="lb-btn" id="lb-rotate" title="這一頁右轉 90°">⟳</button>
+      <button class="lb-btn" id="lb-close" title="關閉（Esc）">✕</button>
+    </header>
+    <div class="lb-stage" id="lb-stage"></div>
+    <footer class="lb-nav">
+      <button class="btn" id="lb-prev">← 上一頁</button>
+      <span class="muted" id="lb-count"></span>
+      <button class="btn" id="lb-next">下一頁 →</button>
+    </footer>
+  </div>
+</div>
+
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/jszip.min.js"></script>

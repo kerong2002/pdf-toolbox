@@ -430,6 +430,51 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
 .toast.err { border-left-color: var(--danger); }
 @keyframes slide-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 
+/* ---- 放大預覽 ---- */
+
+.lightbox { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.lb-backdrop { position: absolute; inset: 0; background: rgba(9, 11, 15, .72); backdrop-filter: blur(3px); }
+
+.lb-panel {
+  position: relative; display: flex; flex-direction: column;
+  width: min(1000px, 100%); max-height: 100%;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden;
+}
+
+.lb-bar { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.lb-title { font-size: 14px; font-weight: 600; }
+.lb-btn {
+  width: 32px; height: 30px; display: grid; place-items: center; cursor: pointer; font-size: 14px;
+  background: var(--surface-2); color: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 7px;
+}
+.lb-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.lb-stage {
+  flex: 1 1 auto; min-height: 0; overflow: auto; padding: 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2);
+}
+.lb-stage canvas {
+  max-width: 100%; height: auto; display: block;
+  background: #fff; box-shadow: var(--shadow); border-radius: 3px;
+}
+.lb-stage .lb-msg { color: var(--muted); font-size: 14px; }
+
+.lb-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); }
+
+/* 縮圖：滑過時提示可點開 */
+.thumb .tcanvas { cursor: zoom-in; }
+.thumb .tzoom {
+  position: absolute; top: 12px; right: 12px;
+  width: 24px; height: 24px; display: grid; place-items: center;
+  font-size: 11px; pointer-events: none; opacity: 0;
+  background: rgba(15, 17, 21, .72); color: #fff; border-radius: 6px;
+  transition: opacity .12s;
+}
+.thumb:hover .tzoom { opacity: 1; }
+
 /* ---- 頁尾 ---- */
 .foot {
   max-width: var(--maxw); margin: 0 auto; padding: 26px 24px 40px;

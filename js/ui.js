@@ -255,6 +255,12 @@ function renderFileList() {
     li.appendChild(el('span', 'fname', item.name));
     li.appendChild(el('span', 'fmeta', fmtSize(item.size)));
 
+    if (/\.pdf$/i.test(item.name)) {
+      const eye = el('button', 'btn ghost', '預覽');
+      eye.addEventListener('click', () => previewFile(item));
+      li.appendChild(eye);
+    }
+
     const del = el('button', 'btn ghost', '移除');
     del.addEventListener('click', () => {
       files.splice(idx, 1);
@@ -450,6 +456,122 @@ $('#dl-all').addEventListener('click', async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 20000);
 });
 
+/* ============================================================
+   放大預覽
+   ------------------------------------------------------------
+   縮圖只有 190px，看不清楚內容。點縮圖（或檔案列的「預覽」）就開一個
+   大圖檢視，可翻頁、可旋轉。pdf.js 文件在關閉時才銷毀，翻頁不用重開。
+   ============================================================ */
+
+let preview = null;  // { doc, entries: [{ page, rot }], idx, onRotate }
+
+async function openPreview({ buf, password, entries, idx = 0, title, onRotate }) {
+  closePreview();
+
+  const box = $('#lightbox');
+  box.hidden = false;
+  $('#lb-title').textContent = title || '預覽';
+  $('#lb-rotate').hidden = !onRotate;
+  $('#lb-stage').innerHTML = '<div class="lb-msg">載入中…</div>';
+
+  let doc;
+  try {
+    doc = await openWithPdfJs(buf, password);
+  } catch (err) {
+    $('#lb-stage').innerHTML = '';
+    $('#lb-stage').appendChild(el('div', 'lb-msg', err.message));
+    return;
+  }
+
+  preview = { doc, entries, idx, onRotate };
+  await drawPreview();
+}
+
+async function drawPreview() {
+  if (!preview) return;
+  const { doc, entries, idx } = preview;
+  const entry = entries[idx];
+
+  $('#lb-count').textContent = `${idx + 1} / ${entries.length}`;
+  $('#lb-prev').disabled = idx === 0;
+  $('#lb-next').disabled = idx === entries.length - 1;
+
+  const page = await doc.getPage(entry.page);
+  // 疊上使用者在頁面管理裡設定的旋轉，讓預覽和實際輸出一致
+  const base = page.getViewport({ scale: 1, rotation: (page.rotate + (entry.rot || 0)) % 360 });
+  const stage = $('#lb-stage');
+  const avail = Math.max(320, stage.clientWidth - 36);
+  const scale = Math.min(2.5, Math.max(1, avail / base.width) * (window.devicePixelRatio > 1 ? 1.5 : 1));
+  const vp = page.getViewport({ scale, rotation: (page.rotate + (entry.rot || 0)) % 360 });
+
+  const { canvas, ctx } = makeCanvas(vp);
+  await renderPage(page, vp, ctx);
+
+  // 用 CSS 寬度控制顯示尺寸，canvas 本身維持高解析度才不會糊
+  canvas.style.width = Math.min(base.width * (avail / base.width), base.width * 1.6) + 'px';
+
+  if (!preview) { freeCanvas(canvas); return; }  // 繪製途中被關掉了
+  stage.innerHTML = '';
+  stage.appendChild(canvas);
+}
+
+function closePreview() {
+  if (preview) {
+    preview.doc.destroy();
+    preview = null;
+  }
+  $('#lightbox').hidden = true;
+  $('#lb-stage').innerHTML = '';
+}
+
+function stepPreview(delta) {
+  if (!preview) return;
+  const next = preview.idx + delta;
+  if (next < 0 || next >= preview.entries.length) return;
+  preview.idx = next;
+  drawPreview();
+}
+
+$('#lb-close').addEventListener('click', closePreview);
+$('#lb-prev').addEventListener('click', () => stepPreview(-1));
+$('#lb-next').addEventListener('click', () => stepPreview(1));
+$$('[data-lb-close]').forEach((n) => n.addEventListener('click', closePreview));
+
+$('#lb-rotate').addEventListener('click', () => {
+  if (!preview || !preview.onRotate) return;
+  const entry = preview.entries[preview.idx];
+  entry.rot = ((entry.rot || 0) + 90) % 360;
+  preview.onRotate(entry);
+  drawPreview();
+});
+
+window.addEventListener('keydown', (e) => {
+  if ($('#lightbox').hidden) return;
+  if (e.key === 'Escape') closePreview();
+  else if (e.key === 'ArrowLeft') stepPreview(-1);
+  else if (e.key === 'ArrowRight') stepPreview(1);
+});
+
+/** 從檔案列預覽一整份 PDF。 */
+async function previewFile(item) {
+  const password = currentTool && currentTool.password ? $('#pdf-password').value : '';
+  let count = 0;
+  try {
+    const probe = await openWithPdfJs(item.buf, password);
+    count = probe.numPages;
+    probe.destroy();
+  } catch (err) {
+    toast(err.message, 'err');
+    return;
+  }
+  await openPreview({
+    buf: item.buf,
+    password,
+    entries: Array.from({ length: count }, (_, i) => ({ page: i + 1, rot: 0 })),
+    title: item.name,
+  });
+}
+
 /* ---------------- 頁面管理：縮圖 ---------------- */
 
 async function loadOrganize() {
@@ -514,8 +636,11 @@ function renderOrganize() {
     ctx.translate(view.width / 2, view.height / 2);
     ctx.rotate((pg.rot * Math.PI) / 180);
     ctx.drawImage(src, -src.width / 2, -src.height / 2);
+    view.title = '點擊放大';
+    view.addEventListener('click', () => openOrganizePreview(idx));
     card.appendChild(view);
 
+    card.appendChild(el('div', 'tzoom', '🔍'));
     card.appendChild(el('div', 'tnum', `第 ${pg.orig + 1} 頁${pg.rot ? ` · ${pg.rot}°` : ''}`));
 
     const bar = el('div', 'tbar');
@@ -527,12 +652,30 @@ function renderOrganize() {
       bar.appendChild(b);
     };
     mk('←', '往前移', () => { [pages[idx - 1], pages[idx]] = [pages[idx], pages[idx - 1]]; renderOrganize(); }, idx === 0);
+    mk('🔍', '放大預覽', () => openOrganizePreview(idx));
     mk('⟳', '右轉 90°', () => { pg.rot = (pg.rot + 90) % 360; renderOrganize(); });
     mk(pg.deleted ? '↺' : '✕', pg.deleted ? '取消刪除' : '刪除這頁', () => { pg.deleted = !pg.deleted; renderOrganize(); });
     mk('→', '往後移', () => { [pages[idx + 1], pages[idx]] = [pages[idx], pages[idx + 1]]; renderOrganize(); }, idx === pages.length - 1);
     card.appendChild(bar);
 
     box.appendChild(card);
+  });
+}
+
+/** 從頁面管理的縮圖開啟預覽，順序與旋轉都跟著目前的編輯狀態。 */
+function openOrganizePreview(idx) {
+  if (!organizeState || !files.length) return;
+  const entries = organizeState.pages.map((pg) => ({ page: pg.orig + 1, rot: pg.rot, ref: pg }));
+  openPreview({
+    buf: files[0].buf,
+    password: $('#pdf-password').value,
+    entries,
+    idx,
+    title: files[0].name,
+    onRotate: (entry) => {
+      entry.ref.rot = entry.rot;
+      renderOrganize();
+    },
   });
 }
 
