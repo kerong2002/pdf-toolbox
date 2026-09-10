@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 工具箱</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="logo">📄</span> PDF 工具箱</div>
+  <div class="privacy">🔒 全部在你的瀏覽器內處理，檔案不會上傳到任何伺服器</div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar" id="nav">
+    <button class="navbtn active" data-tool="merge">合併 PDF</button>
+    <button class="navbtn" data-tool="split">分割 / 擷取頁面</button>
+    <button class="navbtn" data-tool="organize">頁面管理</button>
+    <button class="navbtn" data-tool="pdf2img">PDF → 圖片</button>
+    <button class="navbtn" data-tool="img2pdf">圖片 → PDF</button>
+    <button class="navbtn" data-tool="watermark">加浮水印</button>
+    <button class="navbtn" data-tool="compress">壓縮 PDF</button>
+  </nav>
+
+  <main class="content">
+
+    <!-- ============ 合併 ============ -->
+    <section class="tool active" id="tool-merge">
+      <h1>合併 PDF</h1>
+      <p class="hint">把多個 PDF 接成一份。用上下箭頭調整順序，順序就是合併的順序。</p>
+      <div class="drop" data-drop="merge">
+        <input type="file" multiple accept="application/pdf" hidden>
+        <span>拖曳 PDF 到這裡，或<b>點擊選擇</b>（可多選）</span>
+      </div>
+      <ul class="filelist" data-list="merge"></ul>
+      <div class="row">
+        <label>輸出檔名 <input type="text" id="merge-name" value="合併結果" size="20"></label>
+      </div>
+      <button class="run" data-run="merge">開始合併</button>
+    </section>
+
+    <!-- ============ 分割 ============ -->
+    <section class="tool" id="tool-split">
+      <h1>分割 / 擷取頁面</h1>
+      <p class="hint">從一份 PDF 取出你要的頁面，或拆成單頁。</p>
+      <div class="drop" data-drop="split">
+        <input type="file" accept="application/pdf" hidden>
+        <span>拖曳一份 PDF 到這裡，或<b>點擊選擇</b></span>
+      </div>
+      <ul class="filelist" data-list="split"></ul>
+      <div class="row radios">
+        <label><input type="radio" name="split-mode" value="ranges" checked> 擷取指定頁面成一份</label>
+        <label><input type="radio" name="split-mode" value="each"> 每頁拆成獨立一份</label>
+        <label><input type="radio" name="split-mode" value="chunks"> 每 <input type="number" id="split-chunk" value="2" min="1"> 頁一份</label>
+      </div>
+      <div class="row">
+        <label>頁碼 <input type="text" id="split-ranges" placeholder="例如 1-3,5,8-" size="24"></label>
+      </div>
+      <p class="hint small">留空 = 全部。支援 <code>1-3</code>、<code>5</code>、<code>8-</code>（第 8 頁到最後）</p>
+      <button class="run" data-run="split">開始分割</button>
+    </section>
+
+    <!-- ============ 頁面管理 ============ -->
+    <section class="tool" id="tool-organize">
+      <h1>頁面管理</h1>
+      <p class="hint">看縮圖、刪頁、搬動順序、單頁旋轉，改完匯出新的 PDF。</p>
+      <div class="drop" data-drop="organize">
+        <input type="file" accept="application/pdf" hidden>
+        <span>拖曳一份 PDF 到這裡，或<b>點擊選擇</b></span>
+      </div>
+      <ul class="filelist" data-list="organize"></ul>
+      <div class="row" id="organize-actions" hidden>
+        <button class="mini" id="org-reset">還原</button>
+        <button class="mini" id="org-rotate-all">全部右轉 90°</button>
+        <span class="spacer"></span>
+        <label>輸出檔名 <input type="text" id="organize-name" value="編輯結果" size="16"></label>
+      </div>
+      <div class="thumbs" id="organize-thumbs"></div>
+      <button class="run" data-run="organize">匯出 PDF</button>
+    </section>
+
+    <!-- ============ PDF → 圖片 ============ -->
+    <section class="tool" id="tool-pdf2img">
+      <h1>PDF → 圖片</h1>
+      <p class="hint">每頁輸出一張 PNG 或 JPG。超過一張會打包成 ZIP。</p>
+      <div class="drop" data-drop="pdf2img">
+        <input type="file" multiple accept="application/pdf" hidden>
+        <span>拖曳 PDF 到這裡，或<b>點擊選擇</b>（可多選）</span>
+      </div>
+      <ul class="filelist" data-list="pdf2img"></ul>
+      <div class="row">
+        <label>格式
+          <select id="p2i-format"><option value="image/png">PNG（無損）</option><option value="image/jpeg">JPG（檔案小）</option></select>
+        </label>
+        <label>解析度
+          <select id="p2i-dpi">
+            <option value="96">96 DPI（螢幕看）</option>
+            <option value="150" selected>150 DPI（一般用）</option>
+            <option value="200">200 DPI</option>
+            <option value="300">300 DPI（送件、列印）</option>
+            <option value="400">400 DPI（很大）</option>
+          </select>
+        </label>
+        <label id="p2i-qwrap" hidden>JPG 品質 <input type="range" id="p2i-quality" min="0.4" max="1" step="0.05" value="0.9"><span id="p2i-qval">0.90</span></label>
+      </div>
+      <div class="row">
+        <label>PDF 密碼（有設密碼才需要填）<input type="password" id="p2i-password" placeholder="留空即可" size="18"></label>
+      </div>
+      <button class="run" data-run="pdf2img">開始轉換</button>
+    </section>
+
+    <!-- ============ 圖片 → PDF ============ -->
+    <section class="tool" id="tool-img2pdf">
+      <h1>圖片 → PDF</h1>
+      <p class="hint">把 PNG / JPG 合成一份 PDF，一張圖一頁。順序可調。</p>
+      <div class="drop" data-drop="img2pdf">
+        <input type="file" multiple accept="image/png,image/jpeg" hidden>
+        <span>拖曳圖片到這裡，或<b>點擊選擇</b>（可多選）</span>
+      </div>
+      <ul class="filelist" data-list="img2pdf"></ul>
+      <div class="row">
+        <label>頁面尺寸
+          <select id="i2p-size">
+            <option value="fit" selected>跟著圖片大小</option>
+            <option value="a4p">A4 直向</option>
+            <option value="a4l">A4 橫向</option>
+          </select>
+        </label>
+        <label>邊界 <input type="number" id="i2p-margin" value="0" min="0" max="200"> pt</label>
+        <label>輸出檔名 <input type="text" id="i2p-name" value="圖片轉PDF" size="16"></label>
+      </div>
+      <button class="run" data-run="img2pdf">開始轉換</button>
+    </section>
+
+    <!-- ============ 浮水印 ============ -->
+    <section class="tool" id="tool-watermark">
+      <h1>加浮水印</h1>
+      <p class="hint">在每頁疊上文字，例如「僅供申貸使用」。</p>
+      <div class="warn">⚠️ 內建字型只支援英文、數字與符號。<b>中文浮水印會失敗</b>（PDF 標準字型不含中文字符）。請改用英文，例如 <code>FOR BANK USE ONLY</code>。</div>
+      <div class="drop" data-drop="watermark">
+        <input type="file" multiple accept="application/pdf" hidden>
+        <span>拖曳 PDF 到這裡，或<b>點擊選擇</b>（可多選）</span>
+      </div>
+      <ul class="filelist" data-list="watermark"></ul>
+      <div class="row">
+        <label>文字 <input type="text" id="wm-text" value="COPY - FOR BANK USE ONLY" size="30"></label>
+      </div>
+      <div class="row">
+        <label>字級 <input type="number" id="wm-size" value="42" min="6" max="200"></label>
+        <label>透明度 <input type="range" id="wm-opacity" min="0.05" max="1" step="0.05" value="0.25"><span id="wm-oval">0.25</span></label>
+        <label>角度 <input type="number" id="wm-angle" value="45" min="-90" max="90"> °</label>
+        <label>顏色 <input type="color" id="wm-color" value="#ff0000"></label>
+      </div>
+      <button class="run" data-run="watermark">加上浮水印</button>
+    </section>
+
+    <!-- ============ 壓縮 ============ -->
+    <section class="tool" id="tool-compress">
+      <h1>壓縮 PDF</h1>
+      <p class="hint">把每頁重新畫成 JPG 再包回 PDF。對掃描檔、照片型 PDF 很有效。</p>
+      <div class="warn">⚠️ 這是<b>破壞性</b>壓縮：處理後文字會變成圖片，無法再選取或搜尋。原檔請留著。</div>
+      <div class="drop" data-drop="compress">
+        <input type="file" multiple accept="application/pdf" hidden>
+        <span>拖曳 PDF 到這裡，或<b>點擊選擇</b>（可多選）</span>
+      </div>
+      <ul class="filelist" data-list="compress"></ul>
+      <div class="row">
+        <label>強度
+          <select id="cmp-level">
+            <option value="150:0.85">輕（150 DPI / 品質 0.85）</option>
+            <option value="120:0.75" selected>中（120 DPI / 品質 0.75）</option>
+            <option value="96:0.6">強（96 DPI / 品質 0.6）</option>
+            <option value="72:0.5">極限（72 DPI / 品質 0.5）</option>
+          </select>
+        </label>
+        <label>PDF 密碼 <input type="password" id="cmp-password" placeholder="留空即可" size="14"></label>
+      </div>
+      <button class="run" data-run="compress">開始壓縮</button>
+    </section>
+
+    <!-- ============ 進度 / 結果 ============ -->
+    <div class="status" id="status" hidden>
+      <div class="bar"><i id="bar-fill"></i></div>
+      <div class="msg" id="status-msg"></div>
+    </div>
+
+    <div class="error" id="error" hidden></div>
+
+    <div class="results" id="results" hidden>
+      <div class="results-head">
+        <h2>結果</h2>
+        <div>
+          <button class="mini" id="dl-all">全部下載（ZIP）</button>
+          <button class="mini" id="clear-results">清除</button>
+        </div>
+      </div>
+      <ul id="results-list"></ul>
+    </div>
+
+  </main>
+</div>
+
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# 絕對不要把個人文件推上 GitHub —— 這個專案只放程式碼
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.zip
+!docs/**/*.png
+
+# 測試 / 暫存
+test-files/
+輸出/
+out/
+.DS_Store
+Thumbs.db
