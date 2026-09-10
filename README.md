@@ -31,7 +31,6 @@
 ### 方法 2：GitHub Pages（手機、平板也能用）
 
 ```bash
-cd C:\Users\krameri120\Desktop\pdf-toolbox
 git remote add origin https://github.com/<你的帳號>/pdf-toolbox.git
 git push -u origin main
 ```
