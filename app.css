@@ -191,7 +191,7 @@ h1, h2, h3 { line-height: 1.25; letter-spacing: -.015em; }
 
 .card {
   display: flex; align-items: flex-start; gap: 13px; text-align: left;
-  padding: 17px; cursor: pointer;
+  padding: 17px; cursor: pointer; text-decoration: none;
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r);
   box-shadow: var(--shadow-sm);

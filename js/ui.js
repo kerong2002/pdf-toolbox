@@ -67,13 +67,15 @@ function buildHome() {
 
     const grid = el('div', 'grid');
     for (const tool of list) {
-      const card = el('button', 'card');
+      // 用 <a> 而不是 <button>：中鍵／Ctrl+點擊 就能另開分頁，
+      // 一般點擊則交給 hashchange 路由處理。
+      const card = el('a', 'card');
+      card.href = '#/' + tool.id;
       const icon = el('div', 'card-icon t-' + tool.id, tool.icon);
       const body = el('div', 'card-body');
       body.appendChild(el('h3', null, tool.name));
       body.appendChild(el('p', null, tool.desc));
       card.append(icon, body);
-      card.addEventListener('click', () => openTool(tool.id));
       grid.appendChild(card);
     }
     section.appendChild(grid);
@@ -81,15 +83,53 @@ function buildHome() {
   }
 }
 
-function goHome() {
+function showHome() {
   currentTool = null;
   $('#home').hidden = false;
   $('#workspace').hidden = true;
+  document.title = 'PDF 工具箱';
   window.scrollTo({ top: 0 });
 }
 
-$('#go-home').addEventListener('click', goHome);
-$$('[data-home]').forEach((b) => b.addEventListener('click', goHome));
+/* ============================================================
+   路由
+   ------------------------------------------------------------
+   每個工具給一個 hash 網址（#/merge），這樣瀏覽器的上一頁／下一頁
+   就能在工具之間來回，網址也能收藏和分享。用 hash 而不是 pathname
+   是因為 GitHub Pages 是純靜態站，沒辦法把 /merge 這種路徑改寫回
+   index.html。
+   ============================================================ */
+
+/** 串接時要帶到下一個工具的檔案，由路由處理器取用一次後清空。 */
+let pendingCarry = null;
+
+function navigate(id) {
+  const target = id ? '#/' + id : '#/';
+  if (location.hash === target) handleRoute();  // 同一個網址不會觸發 hashchange
+  else location.hash = target;
+}
+
+async function handleRoute() {
+  const id = (location.hash || '').replace(/^#\/?/, '');
+  const tool = TOOL_BY_ID[id];
+
+  if (!tool) { showHome(); return; }
+
+  const carry = pendingCarry;
+  pendingCarry = null;
+  openTool(tool.id, !!carry);
+
+  if (carry) {
+    files = carry;
+    renderFileList();
+    if (currentTool.id === 'organize') await loadOrganize();
+  }
+}
+
+window.addEventListener('hashchange', handleRoute);
+
+$('#go-home').addEventListener('click', () => navigate(null));
+$$('[data-home]').forEach((b) => b.addEventListener('click', () => navigate(null)));
 
 /* ---------------- 開啟工具 ---------------- */
 
@@ -101,6 +141,7 @@ function openTool(id, keepFiles) {
   $('#home').hidden = true;
   $('#workspace').hidden = false;
 
+  document.title = tool.name + ' · PDF 工具箱';
   $('#crumb-name').textContent = tool.name;
   $('#ws-title').textContent = tool.name;
   $('#ws-desc').textContent = tool.desc;
@@ -351,11 +392,9 @@ async function chainInto(id) {
   for (const res of results) {
     carried.push({ name: res.name, buf: await res.blob.arrayBuffer(), size: res.blob.size, type: res.blob.type });
   }
-  openTool(id, true);
-  files = carried;
   organizeState = null;
-  renderFileList();
-  if (currentTool.id === 'organize') await loadOrganize();
+  pendingCarry = carried;   // 交給路由處理器在切換後放進 files
+  navigate(id);
   toast(`帶入 ${carried.length} 個檔案到「${TOOL_BY_ID[id].name}」`, 'ok');
 }
 
@@ -564,3 +603,4 @@ $('#run-btn').addEventListener('click', async () => {
 /* ---------------- 啟動 ---------------- */
 
 buildHome();
+handleRoute();   // 支援直接開 .../#/watermark 這種網址
