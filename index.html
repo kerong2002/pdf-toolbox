@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDF 工具箱</title>
 <meta name="description" content="在瀏覽器內完成的 PDF 工具：合併、分割、轉圖、壓縮、浮水印。檔案不會上傳。">
-<link rel="stylesheet" href="app.css">
+<!-- ?v= 版本戳：GitHub Pages 對每個檔案都送 Cache-Control: max-age=600，
+     HTML 與 JS 會各自獨立過期，回訪者可能拿到「新 HTML + 舊 JS」而壞掉。
+     加上版本戳後，每份 HTML 只會拉到與自己配對的資源。
+     改完程式後請執行 ./bump-version.sh 更新這些戳記。 -->
+<link rel="stylesheet" href="app.css?v=20260910c">
 </head>
 <body>
 
@@ -373,8 +377,8 @@
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
-<script src="js/core.js"></script>
-<script src="js/tools.js"></script>
-<script src="js/ui.js"></script>
+<script src="js/core.js?v=20260910c"></script>
+<script src="js/tools.js?v=20260910c"></script>
+<script src="js/ui.js?v=20260910c"></script>
 </body>
 </html>

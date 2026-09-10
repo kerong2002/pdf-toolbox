@@ -85,6 +85,17 @@ vendor/         第三方套件
 要加新工具的話，在 `js/tools.js` 寫一個 `run(files, password)` 函式，再加進 `TOOLS` 陣列，
 首頁的卡片和工作區會自動生出來。選項面板放在 `index.html` 裡 id 為 `opt-<工具 id>` 的區塊。
 
+### 發佈前務必執行
+
+```bash
+./bump-version.sh
+```
+
+這會更新 `index.html` 裡資源網址的 `?v=` 版本戳。**跳過這步會讓部分使用者拿到壞掉的版本** ——
+GitHub Pages 對每個檔案都送 `Cache-Control: max-age=600`，HTML 與 JS/CSS 各自獨立過期，
+回訪者很可能拿到「新 HTML + 舊 JS」。加了版本戳之後，每份 HTML 只會拉到與自己配對的資源，
+最差情況只是看到舊版，不會半新半舊而壞掉。
+
 ### 踩過的坑
 
 1. **算繪一定要用 `intent: 'print'`**（`core.js` 的 `renderPage`）。pdf.js 在預設的 display intent 下會用 `requestAnimationFrame` 排程每個算繪區塊，而瀏覽器會把背景分頁的 rAF 節流到近乎停止 —— 使用者只要在轉檔途中切去別的分頁，進度條就永遠卡住。print intent 走 microtask，不受影響。
