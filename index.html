@@ -190,6 +190,101 @@
     <div class="field"><label for="pn-margin">邊距（pt）</label><input type="number" id="pn-margin" value="28" min="4" max="200"></div>
   </div>
 
+  <div class="options" id="opt-alternate" hidden>
+    <div class="field wide">
+      <label>第二份的頁序</label>
+      <div class="segmented" id="alt-reverse">
+        <button data-val="no" class="on">正序</button>
+        <button data-val="yes">反序</button>
+      </div>
+      <small>掃描雙面文件時，如果背面是從最後一頁往回掃的，選「反序」</small>
+    </div>
+    <div class="field"><label for="alt-name">輸出檔名</label><input type="text" id="alt-name" value="交錯合併"></div>
+  </div>
+
+  <div class="options" id="opt-nup" hidden>
+    <div class="field">
+      <label for="nup-per">每張紙放幾頁</label>
+      <select id="nup-per">
+        <option value="2" selected>2 頁</option>
+        <option value="4">4 頁</option>
+        <option value="6">6 頁</option>
+        <option value="9">9 頁</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="nup-size">紙張</label>
+      <select id="nup-size">
+        <option value="a4p">A4 直向</option>
+        <option value="a4l" selected>A4 橫向</option>
+      </select>
+    </div>
+    <div class="field"><label for="nup-gap">間距（pt）</label><input type="number" id="nup-gap" value="10" min="0" max="80"></div>
+    <div class="field"><label for="nup-margin">邊界（pt）</label><input type="number" id="nup-margin" value="20" min="0" max="120"></div>
+    <div class="field">
+      <label>加上分隔線</label>
+      <div class="segmented" id="nup-border">
+        <button data-val="no" class="on">不要</button>
+        <button data-val="yes">要</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="options" id="opt-deblank" hidden>
+    <div class="field wide">
+      <label for="db-level">判定標準</label>
+      <select id="db-level">
+        <option value="0.999">寬鬆 — 幾乎全白才算空白</option>
+        <option value="0.995" selected>一般</option>
+        <option value="0.99">嚴格 — 只有少量雜點也算空白</option>
+      </select>
+      <small>掃描檔常有雜訊，太嚴格可能誤刪有內容的頁</small>
+    </div>
+  </div>
+
+  <div class="options" id="opt-grayscale" hidden>
+    <div class="field">
+      <label for="gs-mode">模式</label>
+      <select id="gs-mode">
+        <option value="gray" selected>灰階</option>
+        <option value="bw">純黑白（二值化）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="gs-dpi">解析度</label>
+      <select id="gs-dpi">
+        <option value="150" selected>150 DPI</option>
+        <option value="200">200 DPI</option>
+        <option value="300">300 DPI</option>
+      </select>
+    </div>
+    <div class="field" id="gs-thresh-wrap" hidden>
+      <label for="gs-thresh">黑白分界 <output id="gs-tval">128</output></label>
+      <input type="range" id="gs-thresh" min="60" max="200" step="5" value="128">
+    </div>
+  </div>
+
+  <div class="options" id="opt-metadata" hidden>
+    <div class="field wide"><label for="md-title">標題</label><input type="text" id="md-title" placeholder="（未設定）"></div>
+    <div class="field"><label for="md-author">作者</label><input type="text" id="md-author" placeholder="（未設定）"></div>
+    <div class="field"><label for="md-subject">主旨</label><input type="text" id="md-subject" placeholder="（未設定）"></div>
+    <div class="field wide"><label for="md-keywords">關鍵字</label><input type="text" id="md-keywords" placeholder="用逗號分隔"></div>
+    <div class="field wide">
+      <label>清除全部中繼資料</label>
+      <div class="segmented" id="md-wipe">
+        <button data-val="no" class="on">保留並套用上面的值</button>
+        <button data-val="yes">全部清空</button>
+      </div>
+      <small>清空會一併移除製作軟體、建立時間等痕跡</small>
+    </div>
+  </div>
+
+  <div class="options" id="opt-flatten" hidden>
+    <div class="field wide">
+      <small>把表單欄位與註解「壓平」成頁面內容，之後就不能再編輯。常用於送出前定稿。</small>
+    </div>
+  </div>
+
   <div class="options" id="opt-compress" hidden>
     <div class="field wide">
       <label for="cmp-level">壓縮強度</label>

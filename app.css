@@ -217,11 +217,17 @@ h1, h2, h3 { line-height: 1.25; letter-spacing: -.015em; }
 .t-split    { background: #ecfdf5; color: #059669; }
 .t-organize { background: #fff7ed; color: #ea580c; }
 .t-pagenum  { background: #fdf4ff; color: #a21caf; }
+.t-alternate{ background: #eef6ff; color: #1d4ed8; }
+.t-nup      { background: #f0f9ff; color: #0369a1; }
 .t-pdf2img  { background: #eff6ff; color: #2563eb; }
 .t-img2pdf  { background: #f0fdfa; color: #0d9488; }
 .t-pdf2txt  { background: #f8fafc; color: #475569; }
 .t-watermark{ background: #fef2f2; color: #dc2626; }
+.t-metadata { background: #f5f3ff; color: #7c3aed; }
+.t-flatten  { background: #fdf2f8; color: #be185d; }
 .t-compress { background: #fefce8; color: #ca8a04; }
+.t-deblank  { background: #f7fee7; color: #4d7c0f; }
+.t-grayscale{ background: #f1f5f9; color: #334155; }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .card-icon { background: var(--surface-2); }

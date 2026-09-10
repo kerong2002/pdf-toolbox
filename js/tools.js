@@ -332,6 +332,296 @@ async function runPageNum(files) {
   return `${files.length} 份檔案、共 ${pageTotal} 頁加上頁碼。`;
 }
 
+/* ---------------- 交錯合併 ---------------- */
+
+async function runAlternate(files) {
+  if (files.length < 2) throw new Error('交錯合併至少需要 2 份 PDF。');
+  const reverse = getSegmented('#alt-reverse') === 'yes';
+
+  const sources = [];
+  for (let i = 0; i < files.length; i++) {
+    setProgress(i, files.length, `正在讀取「${files[i].name}」…`);
+    const doc = await openWithPdfLib(files[i].buf);
+    const order = doc.getPageIndices();
+    // 反序只套用在第二份之後：雙面掃描時背面通常是倒著掃的
+    sources.push({ doc, order: reverse && i > 0 ? order.slice().reverse() : order });
+  }
+
+  const out = await PDFDocument.create();
+  const longest = Math.max(...sources.map((s) => s.order.length));
+  let added = 0;
+
+  for (let round = 0; round < longest; round++) {
+    for (const src of sources) {
+      if (round >= src.order.length) continue;
+      const [page] = await out.copyPages(src.doc, [src.order[round]]);
+      out.addPage(page);
+      added++;
+    }
+  }
+
+  const bytes = await out.save();
+  addResult(safeName($('#alt-name').value || '交錯合併') + '.pdf', new Blob([bytes], { type: 'application/pdf' }));
+
+  const counts = sources.map((s) => s.order.length).join(' + ');
+  return `交錯合併 ${files.length} 份（${counts} 頁）成 ${added} 頁。`;
+}
+
+/* ---------------- N-up 併頁 ---------------- */
+
+/** [欄, 列]。欄數 ≥ 列數，配合預設的 A4 橫向：直式頁面左右並排最省空間。 */
+const NUP_LAYOUT = { 2: [2, 1], 4: [2, 2], 6: [3, 2], 9: [3, 3] };
+
+async function runNup(files) {
+  const per = parseInt($('#nup-per').value, 10);
+  const [cols, rows] = NUP_LAYOUT[per];
+  const [pw, ph] = $('#nup-size').value === 'a4p' ? [A4.w, A4.h] : [A4.h, A4.w];
+  const gap = Math.max(0, parseInt($('#nup-gap').value, 10) || 0);
+  const margin = Math.max(0, parseInt($('#nup-margin').value, 10) || 0);
+  const border = getSegmented('#nup-border') === 'yes';
+
+  const cellW = (pw - margin * 2 - gap * (cols - 1)) / cols;
+  const cellH = (ph - margin * 2 - gap * (rows - 1)) / rows;
+  if (cellW <= 0 || cellH <= 0) throw new Error('邊界或間距太大，格子容不下內容。請調小一點。');
+
+  let sheets = 0;
+
+  for (let f = 0; f < files.length; f++) {
+    const item = files[f];
+    setProgress(f, files.length, `正在處理「${item.name}」…`);
+
+    const src = await openWithPdfLib(item.buf);
+    const out = await PDFDocument.create();
+    const embedded = await out.embedPages(src.getPages());
+
+    for (let i = 0; i < embedded.length; i += per) {
+      const sheet = out.addPage([pw, ph]);
+      sheets++;
+
+      for (let k = 0; k < per && i + k < embedded.length; k++) {
+        const ep = embedded[i + k];
+        const col = k % cols;
+        const row = Math.floor(k / cols);
+        const cellX = margin + col * (cellW + gap);
+        // PDF 的原點在左下角，但閱讀順序由上往下，所以 row 要反過來算
+        const cellY = ph - margin - (row + 1) * cellH - row * gap;
+
+        const scale = Math.min(cellW / ep.width, cellH / ep.height);
+        const w = ep.width * scale;
+        const h = ep.height * scale;
+
+        sheet.drawPage(ep, {
+          x: cellX + (cellW - w) / 2,
+          y: cellY + (cellH - h) / 2,
+          xScale: scale,
+          yScale: scale,
+        });
+
+        if (border) {
+          sheet.drawRectangle({
+            x: cellX, y: cellY, width: cellW, height: cellH,
+            borderColor: rgb(0.75, 0.75, 0.75), borderWidth: 0.5,
+          });
+        }
+      }
+    }
+
+    const bytes = await out.save();
+    addResult(`${safeName(baseName(item.name))}-${per}合1.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+  }
+
+  return `每張紙 ${per} 頁（${cols}×${rows}），共輸出 ${sheets} 張。`;
+}
+
+/* ---------------- 移除空白頁 ---------------- */
+
+/** 把一頁畫成小圖，算「接近白色」的像素比例。 */
+async function whiteRatio(page) {
+  const full = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: Math.min(1, 200 / Math.max(full.width, full.height)) });
+  const { canvas, ctx } = makeCanvas(vp);
+  await renderPage(page, vp, ctx);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  freeCanvas(canvas);
+
+  let white = 0;
+  const total = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] > 245 && data[i + 1] > 245 && data[i + 2] > 245) white++;
+  }
+  return white / total;
+}
+
+async function runDeblank(files, password) {
+  const threshold = parseFloat($('#db-level').value);
+  let removedTotal = 0;
+  let keptTotal = 0;
+
+  for (let f = 0; f < files.length; f++) {
+    const item = files[f];
+    const jsDoc = await openWithPdfJs(item.buf, password);
+    const keep = [];
+    const dropped = [];
+
+    for (let n = 1; n <= jsDoc.numPages; n++) {
+      setProgress(f + n / jsDoc.numPages, files.length, `「${item.name}」檢查第 ${n} / ${jsDoc.numPages} 頁…`);
+      const ratio = await whiteRatio(await jsDoc.getPage(n));
+      if (ratio >= threshold) dropped.push(n); else keep.push(n - 1);
+    }
+    jsDoc.destroy();
+
+    if (!keep.length) throw new Error(`「${item.name}」整份都被判定為空白頁，沒有東西可以保留。請把判定標準調寬鬆一點。`);
+
+    if (!dropped.length) {
+      keptTotal += keep.length;
+      continue; // 沒有空白頁就不產出檔案
+    }
+
+    const src = await openWithPdfLib(item.buf);
+    const out = await PDFDocument.create();
+    const pages = await out.copyPages(src, keep);
+    pages.forEach((p) => out.addPage(p));
+    const bytes = await out.save();
+    addResult(`${safeName(baseName(item.name))}-去空白.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+
+    removedTotal += dropped.length;
+    keptTotal += keep.length;
+  }
+
+  if (!removedTotal) return `檢查完畢，${keptTotal} 頁裡沒有找到空白頁，所以沒有產生新檔案。`;
+  return `移除 ${removedTotal} 頁空白頁，保留 ${keptTotal} 頁。`;
+}
+
+/* ---------------- 灰階 / 黑白 ---------------- */
+
+async function runGrayscale(files, password) {
+  const mode = $('#gs-mode').value;
+  const dpi = parseInt($('#gs-dpi').value, 10);
+  const threshold = parseInt($('#gs-thresh').value, 10);
+
+  let before = 0;
+  let after = 0;
+  let pageTotal = 0;
+
+  for (let f = 0; f < files.length; f++) {
+    const item = files[f];
+    const jsDoc = await openWithPdfJs(item.buf, password);
+    const out = await PDFDocument.create();
+
+    for (let n = 1; n <= jsDoc.numPages; n++) {
+      setProgress(f + n / jsDoc.numPages, files.length, `「${item.name}」第 ${n} / ${jsDoc.numPages} 頁…`);
+      const page = await jsDoc.getPage(n);
+      const ptVp = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: dpi / 72 });
+
+      const { canvas, ctx } = makeCanvas(vp);
+      await renderPage(page, vp, ctx);
+
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        // Rec. 601 亮度權重，比單純平均更接近人眼感受
+        const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const v = mode === 'bw' ? (lum >= threshold ? 255 : 0) : lum;
+        d[i] = d[i + 1] = d[i + 2] = v;
+      }
+      ctx.putImageData(img, 0, 0);
+
+      const blob = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+      freeCanvas(canvas);
+
+      const embedded = await out.embedJpg(await blob.arrayBuffer());
+      const newPage = out.addPage([ptVp.width, ptVp.height]);
+      newPage.drawImage(embedded, { x: 0, y: 0, width: ptVp.width, height: ptVp.height });
+      pageTotal++;
+    }
+    jsDoc.destroy();
+
+    const bytes = await out.save();
+    before += item.size;
+    after += bytes.length;
+    addResult(`${safeName(baseName(item.name))}-${mode === 'bw' ? '黑白' : '灰階'}.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+  }
+
+  return `${pageTotal} 頁轉為${mode === 'bw' ? '純黑白' : '灰階'}，${fmtSize(before)} → ${fmtSize(after)}。`;
+}
+
+/* ---------------- 中繼資料 ---------------- */
+
+async function runMetadata(files) {
+  const wipe = getSegmented('#md-wipe') === 'yes';
+  const title = $('#md-title').value;
+  const author = $('#md-author').value;
+  const subject = $('#md-subject').value;
+  const keywords = $('#md-keywords').value;
+
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    setProgress(i, files.length, `正在處理「${item.name}」…`);
+    const doc = await openWithPdfLib(item.buf);
+
+    if (wipe) {
+      doc.setTitle('');
+      doc.setAuthor('');
+      doc.setSubject('');
+      doc.setKeywords([]);
+      doc.setProducer('');
+      doc.setCreator('');
+    } else {
+      // 空字串代表「不更動」，避免不小心把原本的值清掉
+      if (title) doc.setTitle(title);
+      if (author) doc.setAuthor(author);
+      if (subject) doc.setSubject(subject);
+      if (keywords) doc.setKeywords(keywords.split(',').map((k) => k.trim()).filter(Boolean));
+    }
+
+    const bytes = await doc.save();
+    addResult(`${safeName(baseName(item.name))}-中繼資料.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+  }
+
+  return wipe ? `${files.length} 份檔案的中繼資料已清空。` : `${files.length} 份檔案的中繼資料已更新。`;
+}
+
+/* ---------------- 展平表單 ---------------- */
+
+async function runFlatten(files) {
+  let flattened = 0;
+  let noForm = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    setProgress(i, files.length, `正在處理「${item.name}」…`);
+    const doc = await openWithPdfLib(item.buf);
+
+    const form = doc.getForm();
+    const fieldCount = form.getFields().length;
+    if (fieldCount === 0) {
+      noForm++;
+    } else {
+      try {
+        form.flatten();
+        flattened += fieldCount;
+      } catch (err) {
+        // 壓平會重新產生欄位外觀，若欄位值含中文就會撞到標準字型的 WinAnsi 限制
+        const cjk = /WinAnsi cannot encode/i.test(err.message || '');
+        throw new Error(
+          `「${item.name}」的表單無法壓平：${err.message}\n` +
+            (cjk
+              ? '欄位裡有中文，而 PDF 標準字型畫不出中文字符。\n' +
+                '變通做法：用「PDF → 圖片」轉成圖片再用「圖片 → PDF」組回來，一樣能達到定稿不可編輯的效果。'
+              : '這份表單可能用了本工具不支援的欄位型別。')
+        );
+      }
+    }
+
+    const bytes = await doc.save();
+    addResult(`${safeName(baseName(item.name))}-已壓平.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+  }
+
+  if (!flattened) return `這 ${files.length} 份檔案裡沒有可填寫的表單欄位，內容原樣輸出。`;
+  return `壓平 ${flattened} 個表單欄位${noForm ? `（另有 ${noForm} 份沒有表單）` : ''}。`;
+}
+
 /* ---------------- 壓縮 ---------------- */
 
 async function runCompress(files, password) {
@@ -402,6 +692,16 @@ const TOOLS = [
     accept: 'pdf', multiple: true, run: runPageNum,
   },
   {
+    id: 'alternate', name: '交錯合併', icon: '⇅', cat: '組織',
+    desc: '兩份交替取頁，雙面掃描的正反面可合回一份',
+    accept: 'pdf', multiple: true, min: 2, run: runAlternate,
+  },
+  {
+    id: 'nup', name: '多頁併一頁', icon: '▤', cat: '組織',
+    desc: '2 / 4 / 6 / 9 頁排在同一張紙上，省紙',
+    accept: 'pdf', multiple: true, run: runNup,
+  },
+  {
     id: 'pdf2img', name: 'PDF → 圖片', icon: '🖼', cat: '轉換',
     desc: '每頁輸出 PNG 或 JPG，最高 400 DPI',
     accept: 'pdf', multiple: true, password: true, run: runPdf2Img,
@@ -423,10 +723,31 @@ const TOOLS = [
     accept: 'pdf', multiple: true, run: runWatermark,
   },
   {
+    id: 'metadata', name: '中繼資料', icon: 'ⓘ', cat: '編輯',
+    desc: '編輯標題、作者，或一鍵清除全部痕跡',
+    accept: 'pdf', multiple: true, run: runMetadata,
+  },
+  {
+    id: 'flatten', name: '展平表單', icon: '⊟', cat: '編輯',
+    desc: '把表單欄位壓平成頁面內容，定稿用',
+    accept: 'pdf', multiple: true, run: runFlatten,
+  },
+  {
     id: 'compress', name: '壓縮 PDF', icon: '⇩', cat: '優化',
     desc: '重新光柵化，掃描檔可縮到 1/10 以下',
     accept: 'pdf', multiple: true, password: true, run: runCompress,
     note: '這是破壞性壓縮：處理後文字會變成圖片，無法再選取或搜尋。原檔請留著。',
+  },
+  {
+    id: 'deblank', name: '移除空白頁', icon: '␀', cat: '優化',
+    desc: '自動找出並刪掉空白頁，掃描檔常用',
+    accept: 'pdf', multiple: true, password: true, run: runDeblank,
+  },
+  {
+    id: 'grayscale', name: '灰階 / 黑白', icon: '◐', cat: '優化',
+    desc: '轉成灰階或純黑白，列印省墨、檔案更小',
+    accept: 'pdf', multiple: true, password: true, run: runGrayscale,
+    note: '和壓縮一樣是重新光柵化：處理後文字會變成圖片，無法再選取或搜尋。',
   },
 ];
 

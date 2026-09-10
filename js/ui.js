@@ -217,6 +217,24 @@ async function addFiles(fileList) {
   renderFileList();
   clearResults();
   if (currentTool.id === 'organize') await loadOrganize();
+  if (currentTool.id === 'metadata') await loadMetadata();
+}
+
+/** 把第一份檔案現有的中繼資料填進表單，讓使用者看得到原本的值。 */
+async function loadMetadata() {
+  const fields = { '#md-title': 'getTitle', '#md-author': 'getAuthor', '#md-subject': 'getSubject' };
+  for (const sel of Object.keys(fields)) $(sel).value = '';
+  $('#md-keywords').value = '';
+  if (!files.length) return;
+
+  try {
+    const doc = await openWithPdfLib(files[0].buf);
+    for (const [sel, getter] of Object.entries(fields)) $(sel).value = doc[getter]() || '';
+    const kw = doc.getKeywords();
+    $('#md-keywords').value = Array.isArray(kw) ? kw.join(', ') : kw || '';
+  } catch {
+    // 讀不到就讓欄位保持空白，使用者仍可直接填新值
+  }
 }
 
 function renderFileList() {
@@ -557,6 +575,12 @@ $$('.segmented').forEach((group) => {
 
 $('#p2i-quality').addEventListener('input', (e) => {
   $('#p2i-qval').textContent = parseFloat(e.target.value).toFixed(2);
+});
+$('#gs-mode').addEventListener('change', (e) => {
+  $('#gs-thresh-wrap').hidden = e.target.value !== 'bw';
+});
+$('#gs-thresh').addEventListener('input', (e) => {
+  $('#gs-tval').textContent = e.target.value;
 });
 $('#wm-opacity').addEventListener('input', (e) => {
   $('#wm-oval').textContent = parseFloat(e.target.value).toFixed(2);
