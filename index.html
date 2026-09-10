@@ -9,7 +9,7 @@
      HTML 與 JS 會各自獨立過期，回訪者可能拿到「新 HTML + 舊 JS」而壞掉。
      加上版本戳後，每份 HTML 只會拉到與自己配對的資源。
      改完程式後請執行 ./bump-version.sh 更新這些戳記。 -->
-<link rel="stylesheet" href="app.css?v=20260910c">
+<link rel="stylesheet" href="app.css?v=20260910f">
 </head>
 <body>
 
@@ -151,20 +151,84 @@
   </div>
 
   <div class="options" id="opt-watermark" hidden>
-    <div class="field wide"><label for="wm-text">浮水印文字</label><input type="text" id="wm-text" value="僅供申貸使用"></div>
-    <div class="field"><label for="wm-size">字級</label><input type="number" id="wm-size" value="48" min="6" max="300"></div>
+    <div class="field wide">
+      <label>浮水印類型</label>
+      <div class="segmented" id="wm-kind">
+        <button data-val="text" class="on">文字</button>
+        <button data-val="image">圖片</button>
+      </div>
+    </div>
+
+    <div class="field wide wm-text-only"><label for="wm-text">浮水印文字</label><input type="text" id="wm-text" value="僅供申貸使用"></div>
+    <div class="field wm-text-only"><label for="wm-size">字級</label><input type="number" id="wm-size" value="48" min="6" max="300"></div>
+    <div class="field wm-text-only"><label for="wm-color">顏色</label><input type="color" id="wm-color" value="#e02424"></div>
+
+    <div class="field wide wm-image-only" hidden>
+      <label>浮水印圖片</label>
+      <div class="wm-imgpick" id="wm-imgpick">
+        <input type="file" id="wm-imgfile" accept="image/png,image/jpeg" hidden>
+        <span id="wm-imgname">點擊選擇 PNG / JPG（建議用去背的 PNG）</span>
+        <button class="btn ghost" id="wm-imgclear" hidden>移除</button>
+      </div>
+    </div>
+    <div class="field wm-image-only" hidden>
+      <label for="wm-imgscale">大小 <output id="wm-sval">40%</output> 頁寬</label>
+      <input type="range" id="wm-imgscale" min="5" max="100" step="5" value="40">
+    </div>
+
     <div class="field">
       <label for="wm-opacity">透明度 <output id="wm-oval">0.25</output></label>
       <input type="range" id="wm-opacity" min="0.05" max="1" step="0.05" value="0.25">
     </div>
     <div class="field"><label for="wm-angle">角度</label><input type="number" id="wm-angle" value="45" min="-90" max="90"></div>
-    <div class="field"><label for="wm-color">顏色</label><input type="color" id="wm-color" value="#e02424"></div>
     <div class="field">
       <label>鋪滿整頁</label>
       <div class="segmented" id="wm-tile">
         <button data-val="no" class="on">只放中央</button>
         <button data-val="yes">平鋪</button>
       </div>
+    </div>
+
+    <div class="field wide">
+      <label>效果預覽<span class="muted" id="wm-prevnote"></span></label>
+      <div class="wm-preview" id="wm-preview">
+        <div class="wm-prev-empty">選好 PDF 後，這裡會顯示套用浮水印後的第一頁</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="options" id="opt-encrypt" hidden>
+    <div class="field"><label for="enc-user">開檔密碼</label><input type="password" id="enc-user" placeholder="開啟時要輸入的密碼"></div>
+    <div class="field"><label for="enc-owner">權限密碼（選填）</label><input type="password" id="enc-owner" placeholder="留空 = 同開檔密碼"></div>
+    <div class="field">
+      <label for="enc-bits">加密強度</label>
+      <select id="enc-bits">
+        <option value="256" selected>256 位元 AES（建議）</option>
+        <option value="128">128 位元 AES</option>
+        <option value="40">40 位元（相容舊軟體）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>允許列印</label>
+      <div class="segmented" id="enc-print">
+        <button data-val="yes" class="on">允許</button>
+        <button data-val="no">禁止</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>允許複製文字</label>
+      <div class="segmented" id="enc-copy">
+        <button data-val="yes" class="on">允許</button>
+        <button data-val="no">禁止</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="options" id="opt-decrypt" hidden>
+    <div class="field wide">
+      <label for="dec-password">目前的開檔密碼</label>
+      <input type="password" id="dec-password" placeholder="這份 PDF 現在的密碼">
+      <small>解密後會產生沒有密碼的新檔案，原檔不受影響</small>
     </div>
   </div>
 
@@ -377,8 +441,8 @@
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
-<script src="js/core.js?v=20260910c"></script>
-<script src="js/tools.js?v=20260910c"></script>
-<script src="js/ui.js?v=20260910c"></script>
+<script src="js/core.js?v=20260910f"></script>
+<script src="js/tools.js?v=20260910f"></script>
+<script src="js/ui.js?v=20260910f"></script>
 </body>
 </html>

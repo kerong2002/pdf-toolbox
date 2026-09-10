@@ -179,6 +179,7 @@ function openTool(id, keepFiles) {
   window.scrollTo({ top: 0 });
 
   if (tool.id === 'organize' && files.length) loadOrganize();
+  if (tool.id === 'watermark') { syncWatermarkKind(); scheduleWatermarkPreview(); }
 }
 
 /* ---------------- 檔案 ---------------- */
@@ -218,6 +219,7 @@ async function addFiles(fileList) {
   clearResults();
   if (currentTool.id === 'organize') await loadOrganize();
   if (currentTool.id === 'metadata') await loadMetadata();
+  if (currentTool.id === 'watermark') scheduleWatermarkPreview();
 }
 
 /** 把第一份檔案現有的中繼資料填進表單，讓使用者看得到原本的值。 */
@@ -704,6 +706,104 @@ $('#pdf-password').addEventListener('change', () => {
   if (currentTool && currentTool.id === 'organize' && files.length) loadOrganize();
 });
 
+/* ============================================================
+   浮水印：圖片來源與即時預覽
+   ------------------------------------------------------------
+   預覽走的是實際輸出用的同一段程式（stampWatermark）—— 取第一頁做成
+   單頁 PDF、蓋上浮水印、再用 pdf.js 畫出來。稍微慢一點，但保證所見即
+   所得，不會有預覽和成品不一致的問題。
+   ============================================================ */
+
+let watermarkImage = null;      // { name, buf }
+let wmPreviewToken = 0;
+let wmPreviewTimer = null;
+
+$('#wm-imgpick').addEventListener('click', (e) => {
+  if (e.target.id === 'wm-imgclear') return;
+  $('#wm-imgfile').click();
+});
+
+$('#wm-imgfile').addEventListener('change', async () => {
+  const file = $('#wm-imgfile').files[0];
+  $('#wm-imgfile').value = '';
+  if (!file) return;
+  try {
+    watermarkImage = { name: file.name, buf: await readAsArrayBuffer(file) };
+  } catch (err) {
+    toast(err.message, 'err');
+    return;
+  }
+  $('#wm-imgname').textContent = `${watermarkImage.name}（${fmtSize(watermarkImage.buf.byteLength)}）`;
+  $('#wm-imgclear').hidden = false;
+  scheduleWatermarkPreview();
+});
+
+$('#wm-imgclear').addEventListener('click', (e) => {
+  e.stopPropagation();
+  watermarkImage = null;
+  $('#wm-imgname').textContent = '點擊選擇 PNG / JPG（建議用去背的 PNG）';
+  $('#wm-imgclear').hidden = true;
+  scheduleWatermarkPreview();
+});
+
+function syncWatermarkKind() {
+  const image = getSegmented('#wm-kind') === 'image';
+  $$('.wm-text-only').forEach((n) => (n.hidden = image));
+  $$('.wm-image-only').forEach((n) => (n.hidden = !image));
+}
+
+function scheduleWatermarkPreview() {
+  clearTimeout(wmPreviewTimer);
+  wmPreviewTimer = setTimeout(updateWatermarkPreview, 320);
+}
+
+async function updateWatermarkPreview() {
+  if (!currentTool || currentTool.id !== 'watermark') return;
+
+  const box = $('#wm-preview');
+  const note = $('#wm-prevnote');
+  const token = ++wmPreviewToken;
+
+  const fail = (msg) => {
+    if (token !== wmPreviewToken) return;
+    box.innerHTML = '';
+    box.appendChild(el('div', 'wm-prev-empty', msg));
+    note.textContent = '';
+  };
+
+  if (!files.length) return fail('選好 PDF 後，這裡會顯示套用浮水印後的第一頁');
+  note.textContent = '（產生中…）';
+
+  try {
+    const src = await openWithPdfLib(files[0].buf);
+    const one = await PDFDocument.create();
+    const [page] = await one.copyPages(src, [0]);
+    one.addPage(page);
+    await stampWatermark(one, readWatermarkOptions(), watermarkImage && watermarkImage.buf);
+    const bytes = await one.save();
+
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice().buffer }).promise;
+    const pg = await doc.getPage(1);
+    const base = pg.getViewport({ scale: 1 });
+    const vp = pg.getViewport({ scale: Math.min(2, 620 / base.width) });
+    const { canvas, ctx } = makeCanvas(vp);
+    await renderPage(pg, vp, ctx);
+    doc.destroy();
+
+    if (token !== wmPreviewToken) { freeCanvas(canvas); return; }  // 已有更新的預覽在跑
+    box.innerHTML = '';
+    box.appendChild(canvas);
+    note.textContent = `（${files[0].name} 第 1 頁）`;
+  } catch (err) {
+    fail(err.message || '預覽失敗');
+  }
+}
+
+// 任何一個浮水印選項變動都重畫預覽
+['#wm-text', '#wm-size', '#wm-color', '#wm-opacity', '#wm-angle', '#wm-imgscale'].forEach((sel) => {
+  $(sel).addEventListener('input', scheduleWatermarkPreview);
+});
+
 /* ---------------- 選項面板的互動 ---------------- */
 
 $$('.segmented').forEach((group) => {
@@ -713,6 +813,8 @@ $$('.segmented').forEach((group) => {
     $$('button', group).forEach((b) => b.classList.toggle('on', b === btn));
     if (group.id === 'split-mode') $('#split-chunk-wrap').hidden = btn.dataset.val !== 'chunks';
     if (group.id === 'p2i-format') $('#p2i-qwrap').hidden = btn.dataset.val !== 'image/jpeg';
+    if (group.id === 'wm-kind') syncWatermarkKind();
+    if (group.id.startsWith('wm-')) scheduleWatermarkPreview();
   });
 });
 
@@ -727,6 +829,9 @@ $('#gs-thresh').addEventListener('input', (e) => {
 });
 $('#wm-opacity').addEventListener('input', (e) => {
   $('#wm-oval').textContent = parseFloat(e.target.value).toFixed(2);
+});
+$('#wm-imgscale').addEventListener('input', (e) => {
+  $('#wm-sval').textContent = e.target.value + '%';
 });
 
 /* ---------------- 執行 ---------------- */

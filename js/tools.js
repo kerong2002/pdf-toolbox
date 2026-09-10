@@ -237,51 +237,112 @@ async function runPdf2Txt(files, password) {
 
 /* ---------------- 浮水印 ---------------- */
 
+/** 從畫面讀出目前的浮水印設定。預覽與實際輸出共用，確保所見即所得。 */
+function readWatermarkOptions() {
+  return {
+    kind: getSegmented('#wm-kind'),          // 'text' | 'image'
+    text: $('#wm-text').value.trim(),
+    size: Math.max(6, parseInt($('#wm-size').value, 10) || 48),
+    scale: Math.max(5, parseInt($('#wm-imgscale').value, 10) || 40) / 100,
+    opacity: parseFloat($('#wm-opacity').value),
+    angle: parseFloat($('#wm-angle').value) || 0,
+    cssColor: $('#wm-color').value,
+    tile: getSegmented('#wm-tile') === 'yes',
+  };
+}
+
+/**
+ * 把浮水印畫到 doc 的每一頁（或只畫指定頁）。
+ * 回傳實際處理的頁數。
+ */
+async function stampWatermark(doc, opt, imageBytes) {
+  const painter = new TextPainter(doc);
+  const color = hexToRgb(opt.cssColor);
+  let embedded = null;
+  let natural = null;
+
+  if (opt.kind === 'image') {
+    if (!imageBytes) throw new Error('請先選擇要當浮水印的圖片。');
+    try {
+      embedded = isPngBytes(imageBytes)
+        ? await doc.embedPng(copyBuf(imageBytes))
+        : await doc.embedJpg(copyBuf(imageBytes));
+    } catch {
+      throw new Error('浮水印圖片讀取失敗，請改用一般的 PNG 或 JPG。');
+    }
+    natural = { width: embedded.width, height: embedded.height };
+  } else if (!opt.text) {
+    throw new Error('請輸入浮水印文字。');
+  }
+
+  let count = 0;
+  for (const page of doc.getPages()) {
+    const { width, height } = page.getSize();
+
+    // 圖片依頁面寬度等比縮放，文字則直接用字級
+    let mark;
+    if (embedded) {
+      const w = width * opt.scale;
+      mark = { width: w, height: w * (natural.height / natural.width) };
+    } else {
+      mark = await painter.measure(opt.text, opt.size, opt.cssColor);
+    }
+
+    const place = async (cx, cy) => {
+      if (embedded) {
+        const rad = (opt.angle * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        page.drawImage(embedded, {
+          x: cx - (mark.width / 2) * cos + (mark.height / 2) * sin,
+          y: cy - (mark.width / 2) * sin - (mark.height / 2) * cos,
+          width: mark.width,
+          height: mark.height,
+          opacity: opt.opacity,
+          rotate: degrees(opt.angle),
+        });
+      } else {
+        await painter.drawCentered(page, opt.text, {
+          cx, cy, size: opt.size, cssColor: opt.cssColor, color, opacity: opt.opacity, angle: opt.angle,
+        });
+      }
+    };
+
+    if (opt.tile) {
+      const stepX = Math.max(mark.width * 1.4, 70);
+      const stepY = Math.max(mark.height * (embedded ? 1.6 : 4), 70);
+      for (let y = stepY / 2; y < height + stepY; y += stepY) {
+        for (let x = stepX / 2; x < width + stepX; x += stepX) await place(x, y);
+      }
+    } else {
+      await place(width / 2, height / 2);
+    }
+    count++;
+  }
+  return count;
+}
+
 async function runWatermark(files) {
-  const text = $('#wm-text').value.trim();
-  if (!text) throw new Error('請輸入浮水印文字。');
-
-  const size = Math.max(6, parseInt($('#wm-size').value, 10) || 48);
-  const opacity = parseFloat($('#wm-opacity').value);
-  const angle = parseFloat($('#wm-angle').value) || 0;
-  const cssColor = $('#wm-color').value;
-  const color = hexToRgb(cssColor);
-  const tile = getSegmented('#wm-tile') === 'yes';
-
+  const opt = readWatermarkOptions();
+  const imageBytes = watermarkImage ? watermarkImage.buf : null;
   let pageTotal = 0;
 
   for (let i = 0; i < files.length; i++) {
     const item = files[i];
     setProgress(i, files.length, `正在處理「${item.name}」…`);
-
     const doc = await openWithPdfLib(item.buf);
-    const painter = new TextPainter(doc);
-
-    for (const page of doc.getPages()) {
-      const { width, height } = page.getSize();
-      if (tile) {
-        const { width: tw, height: th } = await painter.measure(text, size, cssColor);
-        const stepX = Math.max(tw * 1.5, 80);
-        const stepY = Math.max(th * 4, 80);
-        for (let y = stepY / 2; y < height + stepY; y += stepY) {
-          for (let x = stepX / 2; x < width + stepX; x += stepX) {
-            await painter.drawCentered(page, text, { cx: x, cy: y, size, cssColor, color, opacity, angle });
-          }
-        }
-      } else {
-        await painter.drawCentered(page, text, {
-          cx: width / 2, cy: height / 2, size, cssColor, color, opacity, angle,
-        });
-      }
-      pageTotal++;
-    }
-
+    pageTotal += await stampWatermark(doc, opt, imageBytes);
     const bytes = await doc.save();
     addResult(`${safeName(baseName(item.name))}-浮水印.pdf`, new Blob([bytes], { type: 'application/pdf' }));
   }
 
-  const mode = TextPainter.isVector(text) ? '向量字型' : '點陣圖（中文字型）';
-  return `${files.length} 份檔案、共 ${pageTotal} 頁加上浮水印，使用${mode}。`;
+  const how =
+    opt.kind === 'image'
+      ? `圖片（${watermarkImage.name}）`
+      : TextPainter.isVector(opt.text)
+        ? '文字（向量字型）'
+        : '文字（中文，點陣圖）';
+  return `${files.length} 份檔案、共 ${pageTotal} 頁加上浮水印，使用${how}。`;
 }
 
 /* ---------------- 加頁碼 ---------------- */
@@ -330,6 +391,159 @@ async function runPageNum(files) {
   }
 
   return `${files.length} 份檔案、共 ${pageTotal} 頁加上頁碼。`;
+}
+
+/* ============================================================
+   加密 / 解密（qpdf-wasm）
+   ------------------------------------------------------------
+   pdf-lib 只能讀加密的 PDF，不能寫。qpdf 編譯成 WASM 後可以完整
+   處理加密，而且是內容保留的轉換 —— 文字圖層不會被破壞，這點是
+   「轉圖再組回來」那種替代做法辦不到的。
+
+   qpdf.wasm 有 1.3 MB，所以只在真的用到這兩個工具時才載入。
+   ============================================================ */
+
+let qpdfFactory = null;
+
+async function loadQpdf() {
+  if (qpdfFactory) return qpdfFactory;
+
+  setProgress(0, 1, '正在載入加密模組（約 1.4 MB，只需下載一次）…');
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'vendor/qpdf.js';
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('載入加密模組失敗，請確認網路連線後重試。'));
+    document.head.appendChild(script);
+  });
+
+  // Emscripten 這個 build 會把工廠函式掛成全域 Module
+  if (typeof window.Module !== 'function') throw new Error('加密模組載入異常，請重新整理頁面再試。');
+  qpdfFactory = window.Module;
+  return qpdfFactory;
+}
+
+/**
+ * 跑一次 qpdf CLI。
+ * 每次都開一個新的 Emscripten 實例：callMain 在多數 build 只能安全呼叫一次，
+ * 而 wasm 編譯結果已被瀏覽器快取，重建的成本不高。
+ */
+async function runQpdf(inputBytes, args, outName = 'out.pdf') {
+  const factory = await loadQpdf();
+  const stderr = [];
+
+  const mod = await factory({
+    locateFile: () => 'vendor/qpdf.wasm',
+    noInitialRun: true,
+    print: () => {},
+    printErr: (line) => stderr.push(line),
+  });
+
+  mod.FS.writeFile('/in.pdf', new Uint8Array(inputBytes));
+
+  let status = 0;
+  try {
+    status = mod.callMain(args) || 0;
+  } catch (err) {
+    // Emscripten 以丟出 ExitStatus 的方式回報 exit()
+    if (err && typeof err.status === 'number') status = err.status;
+    else throw err;
+  }
+
+  // qpdf 用 exit code 3 表示「有警告但已成功產出」
+  if (status !== 0 && status !== 3) {
+    // 這個 wasm build 不會把訊息送到 Emscripten 的 printErr，所以多半拿不到細節
+    const detail = stderr.join('\n').trim();
+    throw new Error(detail || `這份 PDF 無法處理（qpdf 代碼 ${status}）。檔案可能已損毀，或使用了不支援的加密方式。`);
+  }
+
+  let out;
+  try {
+    out = mod.FS.readFile('/' + outName);
+  } catch {
+    throw new Error(stderr.join('\n').trim() || 'qpdf 沒有產生輸出檔。');
+  }
+  // 複製一份再回傳，避免引用到即將被釋放的 wasm 記憶體
+  return new Uint8Array(out).slice();
+}
+
+async function runEncrypt(files) {
+  const userPw = $('#enc-user').value;
+  const ownerPw = $('#enc-owner').value || userPw;
+  const bits = $('#enc-bits').value;
+  const allowPrint = getSegmented('#enc-print') === 'yes';
+  const allowCopy = getSegmented('#enc-copy') === 'yes';
+
+  if (!userPw) throw new Error('請輸入開檔密碼。這是別人開啟這份 PDF 時要輸入的密碼。');
+
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    setProgress(i, files.length, `正在加密「${item.name}」…`);
+
+    const args = ['/in.pdf', '--encrypt', userPw, ownerPw, bits];
+    if (!allowPrint) args.push('--print=none');
+    if (!allowCopy) args.push('--extract=n');
+    args.push('--', '/out.pdf');
+
+    const bytes = await runQpdf(item.buf, args);
+    addResult(`${safeName(baseName(item.name))}-已加密.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+  }
+
+  const limits = [];
+  if (!allowPrint) limits.push('禁止列印');
+  if (!allowCopy) limits.push('禁止複製文字');
+  return `${files.length} 份檔案已用 ${bits} 位元加密${limits.length ? `，${limits.join('、')}` : ''}。`;
+}
+
+/** 這份 PDF 有沒有設開檔密碼？ */
+async function isEncrypted(buf) {
+  try {
+    const probe = await openWithPdfJs(buf, '');
+    probe.destroy();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+async function runDecrypt(files) {
+  const password = $('#dec-password').value;
+  if (!password) throw new Error('請輸入這份 PDF 目前的開檔密碼。');
+
+  let done = 0;
+  let alreadyOpen = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    setProgress(i, files.length, `正在解密「${item.name}」…`);
+
+    if (!(await isEncrypted(item.buf))) {
+      alreadyOpen++;
+      continue;
+    }
+
+    // 先用 pdf.js 驗密碼：qpdf 這個 wasm build 不輸出錯誤訊息，只給 exit code，
+    // 分不出「密碼錯」和「檔案壞掉」。pdf.js 的例外精確得多。
+    try {
+      const probe = await openWithPdfJs(item.buf, password);
+      probe.destroy();
+    } catch (err) {
+      throw new Error(`「${item.name}」：${err.message}`);
+    }
+
+    const bytes = await runQpdf(item.buf, [`--password=${password}`, '--decrypt', '/in.pdf', '/out.pdf']);
+    addResult(`${safeName(baseName(item.name))}-已解密.pdf`, new Blob([bytes], { type: 'application/pdf' }));
+    done++;
+  }
+
+  if (!done && alreadyOpen) {
+    throw new Error(
+      alreadyOpen === 1
+        ? '這份 PDF 本來就沒有設開檔密碼，不需要解密。'
+        : `這 ${alreadyOpen} 份 PDF 都沒有設開檔密碼，不需要解密。`
+    );
+  }
+  return `${done} 份檔案已移除密碼，文字圖層完整保留${alreadyOpen ? `（另有 ${alreadyOpen} 份本來就沒加密，已略過）` : ''}。`;
 }
 
 /* ---------------- 交錯合併 ---------------- */
@@ -671,6 +885,12 @@ async function runCompress(files, password) {
    ============================================================ */
 
 const TOOLS = [
+  // 順序就是首頁的顯示順序：最常用的放最前面
+  {
+    id: 'organize', name: '頁面管理', icon: '▦', cat: '組織',
+    desc: '縮圖預覽，刪頁、拖曳排序、單頁旋轉',
+    accept: 'pdf', multiple: false, password: true, run: runOrganize,
+  },
   {
     id: 'merge', name: '合併 PDF', icon: '⊞', cat: '組織',
     desc: '把多份 PDF 接成一份，順序可拖曳調整',
@@ -682,24 +902,19 @@ const TOOLS = [
     accept: 'pdf', multiple: false, run: runSplit,
   },
   {
-    id: 'organize', name: '頁面管理', icon: '▦', cat: '組織',
-    desc: '縮圖預覽，刪頁、拖曳排序、單頁旋轉',
-    accept: 'pdf', multiple: false, password: true, run: runOrganize,
-  },
-  {
     id: 'pagenum', name: '加頁碼', icon: '#', cat: '組織',
     desc: '在每頁加上頁碼，位置格式可選',
     accept: 'pdf', multiple: true, run: runPageNum,
   },
   {
-    id: 'alternate', name: '交錯合併', icon: '⇅', cat: '組織',
-    desc: '兩份交替取頁，雙面掃描的正反面可合回一份',
-    accept: 'pdf', multiple: true, min: 2, run: runAlternate,
-  },
-  {
     id: 'nup', name: '多頁併一頁', icon: '▤', cat: '組織',
     desc: '2 / 4 / 6 / 9 頁排在同一張紙上，省紙',
     accept: 'pdf', multiple: true, run: runNup,
+  },
+  {
+    id: 'alternate', name: '交錯合併', icon: '⇅', cat: '組織',
+    desc: '兩份交替取頁，雙面掃描的正反面可合回一份',
+    accept: 'pdf', multiple: true, min: 2, run: runAlternate,
   },
   {
     id: 'pdf2img', name: 'PDF → 圖片', icon: '🖼', cat: '轉換',
@@ -721,6 +936,18 @@ const TOOLS = [
     id: 'watermark', name: '加浮水印', icon: '💧', cat: '編輯',
     desc: '疊上文字浮水印，支援中文',
     accept: 'pdf', multiple: true, run: runWatermark,
+  },
+  {
+    id: 'encrypt', name: '加密 PDF', icon: '🔒', cat: '安全',
+    desc: '設定開檔密碼，可限制列印與複製',
+    accept: 'pdf', multiple: true, run: runEncrypt,
+    note: '首次使用會下載約 1.4 MB 的加密模組（qpdf），之後就不用再下載。',
+  },
+  {
+    id: 'decrypt', name: '解密 PDF', icon: '🔓', cat: '安全',
+    desc: '移除開檔密碼，文字圖層完整保留',
+    accept: 'pdf', multiple: true, run: runDecrypt,
+    note: '只能解開你知道密碼的 PDF。這不是破解工具。',
   },
   {
     id: 'metadata', name: '中繼資料', icon: 'ⓘ', cat: '編輯',
@@ -752,4 +979,4 @@ const TOOLS = [
 ];
 
 const TOOL_BY_ID = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
-const CATEGORIES = ['組織', '轉換', '編輯', '優化'];
+const CATEGORIES = ['組織', '轉換', '編輯', '安全', '優化'];

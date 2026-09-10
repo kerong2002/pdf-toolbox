@@ -117,6 +117,12 @@ function parseRanges(spec, total) {
   return out;
 }
 
+/** 看檔頭判斷是不是 PNG，比信任副檔名或 MIME 可靠。 */
+function isPngBytes(buf) {
+  const b = new Uint8Array(buf, 0, Math.min(8, buf.byteLength));
+  return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+}
+
 function hexToRgb(hex) {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   if (!m) return rgb(1, 0, 0);
